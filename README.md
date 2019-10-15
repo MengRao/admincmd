@@ -5,18 +5,18 @@ The main work user need to do is to include one header file `AdminCMDServer.h`, 
 
 ```c++
 // A client established a connection to the server, return an optional welcome msg
-std::string onAdminConnect(AdminConn& conn);
+std::string onAdminConnect(AdminCMDServer::Connection& conn);
 
 // A client disconnected from the server
-void onAdminDisconnect(AdminConn& conn, const std::string& error);
+void onAdminDisconnect(AdminCMDServer::Connection& conn, const std::string& error);
 
 // A client sent a command, return an optional response msg
-std::string onAdminCMD(AdminConn& conn, int argc, const char** argv);
+std::string onAdminCMD(AdminCMDServer::Connection& conn, int argc, const char** argv);
 ```
 And each admin connection has below interface for user to operate with:
 
 ```c++
-class AdminConn {
+class Connection {
 public:
   // data member with user defined type
   ConnUserData user_data;
