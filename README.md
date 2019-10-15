@@ -1,7 +1,7 @@
 # admincmd
 Linux deamons/servers often need a back door for administration purposes. This project provides a solution that help build a command line server that can be easily be incorporated into an existing program written in c++, and users can use tools such as telnet or nc to communicate with the server.
 
-The main work user need to do is to include one header file `AdminCMDServer.h`, create an object of `AdminCMDServer` and implement 3 callback functions in a CRTP-ish style to handle events:
+The main work user need to do is to include one header file `AdminCMDServer.h`, create an object of `AdminCMDServer`, provide it with server ip and port to listen on, and implement 3 callback functions in a CRTP-ish style to handle events:
 
 ```c++
 // A client established a connection to the server, return an optional welcome msg
