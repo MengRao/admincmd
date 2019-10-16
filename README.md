@@ -45,7 +45,7 @@ By default admin connection won't timeout, but it can be enabled by setting Admi
 the value is measured by a difference of user provided timestamps, and the timestamps are passed in as the optional parameter of poll: `void poll(uint64_t now = 0)`.
 
 ## Command Format
-Shell style command is supported, that is, when you build a c program and run it by `./a.out args...`, the arguments will be parsed and provided by `int argc, const char** argv` in the program. To be specific, when not in quotes, all characters will be escaped by backslash(`\`), and spaces will delimite arguments and line feed(`\n`) will end the command; When in single quotes(`'`), none character will be escaped; When in double quotes(`"`), only backslash(`\`) and double quote(`"`) will be escaped.
+Shell style command is supported, that is, when you build a c program and run it by `./a.out args...`, the arguments will be parsed into `int argc, const char** argv` in the program. To be specific, when not in quotes, all characters will be escaped by backslash(`\`), spaces will delimite arguments and line feed(`\n`) will end the command; When in single quotes(`'`), none character will be escaped; When in double quotes(`"`), only backslash(`\`) and double quote(`"`) will be escaped.
 
 ## References
 https://github.com/MengRao/pollnet
