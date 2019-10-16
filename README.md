@@ -4,16 +4,16 @@ Linux deamons/servers often need a back door for administration purposes. This p
 The main work user need to do is to include one header file `AdminCMDServer.h`, create an object of `AdminCMDServer`, provide it with server ip and port to listen on, and implement 3 callback functions in a CRTP-ish style to handle events:
 
 ```c++
-// A client established a connection to the server, return an optional welcome msg
-std::string onAdminConnect(AdminCMDServer::Connection& conn);
+// A client established a connection to the server
+void onAdminConnect(AdminCMDServer::Connection& conn);
 
 // A client disconnected from the server
 void onAdminDisconnect(AdminCMDServer::Connection& conn, const std::string& error);
 
-// A client sent a command, return an optional response msg
-std::string onAdminCMD(AdminCMDServer::Connection& conn, int argc, const char** argv);
+// A client sent a command
+void onAdminCMD(AdminCMDServer::Connection& conn, int argc, const char** argv);
 ```
-And each admin connection has below interface for user to operate with:
+And for each admin connection, user can access user defined structure via `user_data`, get remote network address via `getPeername()`, write response msg via `write()` and close the connection via `close()`:
 
 ```c++
 class Connection {
@@ -22,7 +22,12 @@ public:
   ConnUserData user_data;
   
   // get remote network address
+  // return true on success
   bool getPeername(struct sockaddr_in& addr);
+  
+  // more = true: MSG_MORE flag is set on this write
+  // return true on success
+  bool write(const char* data, uint32_t size, bool more = false);
   
   // close this connection with a reason
   void close(const char* reason = "user close");
@@ -30,7 +35,7 @@ public:
 ```
 
 ## Thread Model
-AdminCMDServer does not create threads itself, thus it needs user to drive it by calling `poll()` repetitively. It's up to the user to use existing threads or create an new thread to poll AdminCMDServer, and it's user's responsibility to ensure thread safety.
+AdminCMDServer does not create threads itself, thus it needs user to drive it by calling `poll()` repetitively(`poll()` is non-blocking), it's up to the user to use existing threads or create an new thread to poll and and it's user's responsibility to ensure thread safety.
 
 ## Server Output
 AdminCMDServer does not write errors to stdout or log files. User should use `getLastError()` to get error msg when `init()` failed.
