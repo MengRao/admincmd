@@ -233,13 +233,15 @@ public:
   public:
     ConnUserData user_data;
 
+    // get remote network address
     // return true on success
     bool getPeername(struct sockaddr_in& addr) { return conn.getPeername(addr); }
 
     // more = true: MSG_MORE flag is set on this write
-    // return true on if on success
+    // return true on success
     bool write(const char* data, uint32_t size, bool more = false) { return conn.write(data, size, more); }
 
+    // close this connection with a reason
     void close(const char* reason = "user close") { conn.close(reason); }
 
   private:
