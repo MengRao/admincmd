@@ -35,7 +35,7 @@ public:
 ```
 
 ## Thread Model
-AdminCMDServer does not create threads itself, thus it needs user to drive it by calling `poll()` repetitively(`poll()` is non-blocking), it's up to the user to use existing threads or create an new thread to poll and and it's user's responsibility to ensure thread safety.
+AdminCMDServer does not create threads itself, thus it needs user to drive it by calling `poll()` repetitively(`poll()` is non-blocking), it's up to the user to use existing threads or create an new thread to poll and it's user's responsibility to ensure thread safety.
 
 ## Server Output
 AdminCMDServer does not write errors to stdout or log files. User should use `getLastError()` to get error msg when `init()` failed.
