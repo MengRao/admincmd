@@ -233,7 +233,12 @@ public:
   public:
     ConnUserData user_data;
 
+    // return true on success
     bool getPeername(struct sockaddr_in& addr) { return conn.getPeername(addr); }
+
+    // more = true: MSG_MORE flag is set on this write
+    // return true on if on success
+    bool write(const char* data, uint32_t size, bool more = false) { return conn.write(data, size, more); }
 
     void close(const char* reason = "user close") { conn.close(reason); }
 
@@ -262,8 +267,7 @@ public:
       Connection& new_conn = *conns_[conns_cnt_];
       if (server_.accept2(new_conn.conn)) {
         new_conn.active_ts = now;
-        std::string welcome = handler_->onAdminConnect(new_conn);
-        if (welcome.size()) new_conn.conn.write(welcome.data(), welcome.size());
+        handler_->onAdminConnect(new_conn);
         conns_cnt_++;
       }
     }
@@ -285,8 +289,7 @@ public:
                 else if (ch == '\n') {
                   if (argc) {
                     *out = 0;
-                    std::string resp = handler_->onAdminCMD(conn, argc, argv);
-                    if (resp.size()) conn.conn.write(resp.data(), resp.size());
+                    handler_->onAdminCMD(conn, argc, argv);
                   }
                   out = buf + 1;
                   argc = 0;

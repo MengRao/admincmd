@@ -15,7 +15,7 @@ public:
   using AdminConn = AdminServer::Connection;
 
   void run() {
-    if (!admincmd_server.init(this, "127.0.0.1", 1234)) {
+    if (!admincmd_server.init(this, "0.0.0.0", 1234)) {
       std::cout << "admincmd_server init failed: " << admincmd_server.getLastError() << std::endl;
       return;
     }
@@ -39,13 +39,13 @@ public:
 
   void stop() { running = false; }
 
-  std::string onAdminConnect(AdminConn& conn) {
+  void onAdminConnect(AdminConn& conn) {
     struct sockaddr_in addr;
     conn.getPeername(addr);
     std::cout << "admin connection from: " << inet_ntoa(addr.sin_addr) << ":" << ntohs(addr.sin_port) << std::endl;
 
     conn.user_data.login = false;
-    return admincmd_help;
+    conn.write(admincmd_help.data(), admincmd_help.size());
   }
 
   void onAdminDisconnect(AdminConn& conn, const std::string& error) {
@@ -54,29 +54,34 @@ public:
     std::cout << "admin disconnect, error: " << error << ", login state: " << conn.user_data.login << std::endl;
   }
 
-  std::string onAdminCMD(AdminConn& conn, int argc, const char** argv) {
+  void onAdminCMD(AdminConn& conn, int argc, const char** argv) {
+    std::string resp;
     if (!strcmp(argv[0], "help")) {
-      return admincmd_help;
+      resp = admincmd_help;
+    }
+    else if (!strcmp(argv[0], "login")) {
+      if (argc < 2 || strcmp(argv[1], "123456")) {
+        resp = "wrong password\n";
+      }
+      else {
+        conn.user_data.login = true;
+        resp = "login success\n";
+      }
+    }
+    else if (!conn.user_data.login) {
+      resp = "must login first\n";
+    }
+    else if (!strcmp(argv[0], "echo")) {
+      if (argc >= 2) resp = std::string(argv[1]) + '\n';
+    }
+    else if (!strcmp(argv[0], "stop")) {
+      stop();
+    }
+    else {
+      resp = "invalid cmd, check help\n";
     }
 
-    if (!strcmp(argv[0], "login") && argc >= 2) {
-      if (strcmp(argv[1], "123456")) {
-        return "wrong password\n";
-      }
-      conn.user_data.login = true;
-      return "login success\n";
-    }
-    if(!conn.user_data.login){
-      return "must login first\n";
-    }
-    if (!strcmp(argv[0], "echo") && argc >= 2) {
-      return std::string(argv[1]) + '\n';
-    }
-    if (!strcmp(argv[0], "stop")) {
-      stop();
-      return "";
-    }
-    return "invalid cmd, check help\n";
+    if (resp.size()) conn.write(resp.data(), resp.size());
   }
 
 private:
