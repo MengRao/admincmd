@@ -7,15 +7,15 @@
 class Server
 {
 public:
-  struct AdminData
+  struct CMDConnData
   {
     bool login;
   };
-  using AdminServer = admincmd::AdminCMDServer<Server, AdminData>;
+  using AdminServer = admincmd::AdminCMDServer<Server, CMDConnData>;
   using AdminConn = AdminServer::Connection;
 
   void run() {
-    if (!admincmd_server.init(this, "0.0.0.0", 1234)) {
+    if (!admincmd_server.init("0.0.0.0", 1234)) {
       std::cout << "admincmd_server init failed: " << admincmd_server.getLastError() << std::endl;
       return;
     }
@@ -27,7 +27,7 @@ public:
     running = true;
     admincmd_thr = std::thread([this]() {
       while (running.load(std::memory_order_relaxed)) {
-        admincmd_server.poll();
+        admincmd_server.poll(this);
         std::this_thread::yield();
       }
     });
@@ -55,33 +55,40 @@ public:
   }
 
   void onAdminCMD(AdminConn& conn, int argc, const char** argv) {
-    std::string resp;
+    std::string resp = onCMD(conn.user_data, argc, argv);
+    if (resp.size()) {
+      if (resp.back() != '\n') resp.push_back('\n');
+      conn.write(resp.data(), resp.size());
+    }
+  }
+
+private:
+  std::string onCMD(CMDConnData& conn, int argc, const char** argv) {
     if (!strcmp(argv[0], "help")) {
-      resp = admincmd_help;
+      return admincmd_help;
     }
     else if (!strcmp(argv[0], "login")) {
       if (argc < 2 || strcmp(argv[1], "123456")) {
-        resp = "wrong password\n";
+        return "wrong password";
       }
       else {
-        conn.user_data.login = true;
-        resp = "login success\n";
+        conn.login = true;
+        return "login success";
       }
     }
-    else if (!conn.user_data.login) {
-      resp = "must login first\n";
+    else if (!conn.login) {
+      return "must login first";
     }
-    else if (!strcmp(argv[0], "echo")) {
-      if (argc >= 2) resp = std::string(argv[1]) + '\n';
+    else if (!strcmp(argv[0], "echo") && argc >= 2) {
+      return argv[1];
     }
     else if (!strcmp(argv[0], "stop")) {
       stop();
+      return "bye";
     }
     else {
-      resp = "invalid cmd, check help\n";
+      return "invalid cmd, check help";
     }
-
-    if (resp.size()) conn.write(resp.data(), resp.size());
   }
 
 private:

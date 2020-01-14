@@ -26,8 +26,9 @@ SOFTWARE.
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
-#include <string>
 #include <string.h>
+#include <limits>
+#include <memory>
 
 namespace admincmd {
 
@@ -37,7 +38,7 @@ class SocketTcpConnection
 public:
   ~SocketTcpConnection() { close("destruct"); }
 
-  const std::string& getLastError() { return last_error_; };
+  const char* getLastError() { return last_error_; };
 
   bool isConnected() { return fd_ >= 0; }
 
@@ -129,18 +130,14 @@ protected:
   }
 
   void saveError(const char* msg, bool check_errno) {
-    last_error_ = msg;
-    if (check_errno) {
-      last_error_ += ": ";
-      last_error_ += strerror(errno);
-    }
+    snprintf(last_error_, sizeof(last_error_), "%s %s", msg, check_errno ? (const char*)strerror(errno) : "");
   }
 
   int fd_ = -1;
   uint32_t head_;
   uint32_t tail_;
   char recvbuf_[RecvBufSize];
-  std::string last_error_;
+  char last_error_[64] = "";
 };
 
 template<uint32_t RecvBufSize = 4096>
@@ -149,7 +146,7 @@ class SocketTcpServer
 public:
   using TcpConnection = SocketTcpConnection<RecvBufSize>;
 
-  bool init(const std::string& interface_name, const std::string& server_ip, uint16_t server_port) {
+  bool init(const char* interface, const char* server_ip, uint16_t server_port) {
     listenfd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listenfd_ < 0) {
       saveError("socket error");
@@ -170,7 +167,7 @@ public:
 
     struct sockaddr_in local_addr;
     local_addr.sin_family = AF_INET;
-    inet_pton(AF_INET, server_ip.data(), &(local_addr.sin_addr));
+    inet_pton(AF_INET, server_ip, &(local_addr.sin_addr));
     local_addr.sin_port = htons(server_port);
     bzero(&(local_addr.sin_zero), 8);
     if (bind(listenfd_, (struct sockaddr*)&local_addr, sizeof(local_addr)) < 0) {
@@ -193,7 +190,7 @@ public:
     }
   }
 
-  const std::string& getLastError() { return last_error_; };
+  const char* getLastError() { return last_error_; };
 
   ~SocketTcpServer() { close("destruct"); }
 
@@ -211,18 +208,19 @@ public:
   }
 
 private:
-  void saveError(const char* msg) {
-    last_error_ = msg;
-    last_error_ += ": ";
-    last_error_ += strerror(errno);
-  }
+  void saveError(const char* msg) { snprintf(last_error_, sizeof(last_error_), "%s %s", msg, strerror(errno)); }
 
   int listenfd_ = -1;
-  std::string last_error_;
+  char last_error_[64] = "";
 };
 
-template<typename EventHandler, typename ConnUserData = char, uint32_t MaxConns = 10, uint32_t MaxCMDLen = 4096,
-         uint64_t ConnTimeout = 0>
+inline uint64_t getns() {
+  timespec ts;
+  ::clock_gettime(CLOCK_REALTIME, &ts);
+  return ts.tv_sec * 1000000000 + ts.tv_nsec;
+}
+
+template<typename EventHandler, typename ConnUserData = char, uint32_t MaxCMDLen = 4096, uint32_t MaxConns = 10>
 class AdminCMDServer
 {
 public:
@@ -245,9 +243,9 @@ public:
     void close(const char* reason = "user close") { conn.close(reason); }
 
   private:
-    friend class AdminCMDServer<EventHandler, ConnUserData, MaxConns>;
+    friend class AdminCMDServer;
 
-    uint64_t active_ts = 0;
+    uint64_t expire;
     typename TcpServer::TcpConnection conn;
   };
 
@@ -257,91 +255,98 @@ public:
     }
   }
 
-  bool init(EventHandler* handler, const std::string& server_ip, uint16_t server_port) {
-    handler_ = handler;
+  // conn_timeout: connection max inactive time in milliseconds, 0 means no limit
+  bool init(const char* server_ip, uint16_t server_port, uint64_t conn_timeout = 0) {
+    conn_timeout_ = conn_timeout * 1000000;
     return server_.init("", server_ip, server_port);
   }
 
-  const std::string& getLastError() { return server_.getLastError(); }
+  const char* getLastError() { return server_.getLastError(); }
 
-  void poll(uint64_t now = 0) {
+  void poll(EventHandler* handler) {
+    uint64_t now = 0;
+    uint64_t expire = std::numeric_limits<uint64_t>::max();
+    if (conn_timeout_) {
+      now = getns();
+      expire = now + conn_timeout_;
+    }
     if (conns_cnt_ < MaxConns) {
       Connection& new_conn = *conns_[conns_cnt_];
       if (server_.accept2(new_conn.conn)) {
-        new_conn.active_ts = now;
-        handler_->onAdminConnect(new_conn);
+        new_conn.expire = expire;
+        handler->onAdminConnect(new_conn);
         conns_cnt_++;
       }
     }
     for (int i = 0; i < conns_cnt_;) {
       Connection& conn = *conns_[i];
-      if (conn.conn.read([&](const char* data, uint32_t size) {
-            const char* data_end = data + size;
-            char buf[MaxCMDLen] = {0};
-            const char* argv[MaxCMDLen];
-            char* out = buf + 1;
-            int argc = 0;
-            bool in_quote = false;
-            bool single_quote = false;
-            while (data < data_end) {
-              char ch = *data++;
-              if (!in_quote) {
-                if (ch == ' ' || ch == '\r')
-                  *out++ = 0;
-                else if (ch == '\n') {
-                  if (argc) {
-                    *out = 0;
-                    handler_->onAdminCMD(conn, argc, argv);
-                  }
-                  out = buf + 1;
-                  argc = 0;
-                  in_quote = false;
-                  size = data_end - data;
-                }
-                else {
-                  if (*(out - 1) == 0) argv[argc++] = out;
-                  if (ch == '\'')
-                    in_quote = single_quote = true;
-                  else if (ch == '"')
-                    in_quote = true;
-                  else if (ch == '\\')
-                    *out++ = *data++;
-                  else
-                    *out++ = ch;
-                }
+      conn.conn.read([&](const char* data, uint32_t size) {
+        const char* data_end = data + size;
+        char buf[MaxCMDLen] = {0};
+        const char* argv[MaxCMDLen];
+        char* out = buf + 1;
+        int argc = 0;
+        bool in_quote = false;
+        bool single_quote = false;
+        while (data < data_end) {
+          char ch = *data++;
+          if (!in_quote) {
+            if (ch == ' ' || ch == '\r')
+              *out++ = 0;
+            else if (ch == '\n') {
+              if (argc) {
+                *out = 0;
+                handler->onAdminCMD(conn, argc, argv);
               }
-              else {
-                if (single_quote) {
-                  if (ch == '\'')
-                    in_quote = single_quote = false;
-                  else
-                    *out++ = ch;
-                }
-                else {
-                  if (ch == '"') in_quote = false;
-                  else if (ch == '\\' && (*data == '\\' || *data == '"'))
-                    *out++ = *data++;
-                  else
-                    *out++ = ch;
-                }
-              }
+              conn.expire = expire;
+              out = buf + 1;
+              argc = 0;
+              in_quote = false;
+              size = data_end - data;
             }
-            return size;
-          })) {
-        conn.active_ts = now;
-      }
-      if (ConnTimeout > 0 && now > conn.active_ts + ConnTimeout) conn.conn.close("timeout");
+            else {
+              if (*(out - 1) == 0) argv[argc++] = out;
+              if (ch == '\'')
+                in_quote = single_quote = true;
+              else if (ch == '"')
+                in_quote = true;
+              else if (ch == '\\')
+                *out++ = *data++;
+              else
+                *out++ = ch;
+            }
+          }
+          else {
+            if (single_quote) {
+              if (ch == '\'')
+                in_quote = single_quote = false;
+              else
+                *out++ = ch;
+            }
+            else {
+              if (ch == '"')
+                in_quote = false;
+              else if (ch == '\\' && (*data == '\\' || *data == '"'))
+                *out++ = *data++;
+              else
+                *out++ = ch;
+            }
+          }
+        }
+        return size;
+      });
+      if (now > conn.expire) conn.conn.close("timeout");
       if (conn.conn.isConnected())
         i++;
       else {
-        handler_->onAdminDisconnect(conn, conn.conn.getLastError());
+        handler->onAdminDisconnect(conn, conn.conn.getLastError());
         std::swap(conns_[i], conns_[--conns_cnt_]);
       }
     }
   }
 
 private:
-  EventHandler* handler_ = nullptr;
+  uint64_t conn_timeout_;
   TcpServer server_;
 
   uint32_t conns_cnt_ = 0;
