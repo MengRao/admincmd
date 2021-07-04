@@ -22,10 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #pragma once
+#include <sys/socket.h>
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
+#include <stdio.h>
 #include <string.h>
 #include <limits>
 #include <memory>
@@ -250,7 +253,7 @@ public:
   };
 
   AdminCMDServer() {
-    for (int i = 0; i < MaxConns; i++) {
+    for (uint32_t i = 0; i < MaxConns; i++) {
       conns_[i] = conns_data_ + i;
     }
   }
@@ -278,7 +281,7 @@ public:
         conns_cnt_++;
       }
     }
-    for (int i = 0; i < conns_cnt_;) {
+    for (uint32_t i = 0; i < conns_cnt_;) {
       Connection& conn = *conns_[i];
       conn.conn.read([&](const char* data, uint32_t size) {
         const char* data_end = data + size;
