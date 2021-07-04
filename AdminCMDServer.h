@@ -217,12 +217,6 @@ private:
   char last_error_[64] = "";
 };
 
-inline uint64_t getns() {
-  timespec ts;
-  ::clock_gettime(CLOCK_REALTIME, &ts);
-  return ts.tv_sec * 1000000000 + ts.tv_nsec;
-}
-
 template<typename EventHandler, typename ConnUserData = char, uint32_t MaxCMDLen = 4096, uint32_t MaxConns = 10>
 class AdminCMDServer
 {
@@ -248,7 +242,7 @@ public:
   private:
     friend class AdminCMDServer;
 
-    uint64_t expire;
+    int64_t expire;
     typename TcpServer::TcpConnection conn;
   };
 
@@ -258,19 +252,19 @@ public:
     }
   }
 
-  // conn_timeout: connection max inactive time in milliseconds, 0 means no limit
-  bool init(const char* server_ip, uint16_t server_port, uint64_t conn_timeout = 0) {
-    conn_timeout_ = conn_timeout * 1000000;
+  // conn_timeout: connection max inactive time in seconds, 0 means no limit
+  bool init(const char* server_ip, uint16_t server_port, int64_t conn_timeout = 0) {
+    conn_timeout_ = conn_timeout;
     return server_.init("", server_ip, server_port);
   }
 
   const char* getLastError() { return server_.getLastError(); }
 
   void poll(EventHandler* handler) {
-    uint64_t now = 0;
-    uint64_t expire = std::numeric_limits<uint64_t>::max();
+    int64_t now = 0;
+    int64_t expire = std::numeric_limits<int64_t>::max();
     if (conn_timeout_) {
-      now = getns();
+      now = time(0);
       expire = now + conn_timeout_;
     }
     if (conns_cnt_ < MaxConns) {
@@ -349,7 +343,7 @@ public:
   }
 
 private:
-  uint64_t conn_timeout_;
+  int64_t conn_timeout_;
   TcpServer server_;
 
   uint32_t conns_cnt_ = 0;
